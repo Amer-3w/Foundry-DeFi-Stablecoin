@@ -6,6 +6,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {OracleLib} from "./library/OracleLib.sol";
 
 using SafeERC20 for IERC20;
 using SafeERC20 for DecentralizedStableCoin;
@@ -38,6 +39,8 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorHasNotImproved();
     error DSCEngine__InsufficientDscBalance();
 
+    /////////////// types /////////////
+    using OracleLib for AggregatorV3Interface;
     ///////////// state variables /////////////
 
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
@@ -266,13 +269,13 @@ contract DSCEngine is ReentrancyGuard {
 
     function getUsdValue(address token, uint256 amount) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
     }
 
     function getTokenAmountFromUsdValue(address tokenAddress, uint256 usdAmountInWei) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[tokenAddress]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
     }
 
@@ -284,7 +287,23 @@ contract DSCEngine is ReentrancyGuard {
         (totalDscMinted, totalCollateralValueInUsd) = _getAccountInformation(user);
     }
 
-    function getCollateralDeposited(address user, address token) external view returns (uint256 amountDeposited) {
+    function getCollateralBalanceOfUser(address user, address token) external view returns (uint256 amountDeposited) {
         return s_collateralDeposited[user][token];
+    }
+
+    function getCollateralTokens() external view returns (address[] memory) {
+        return s_collateralTokens;
+    }
+
+    function getCollateralTokenPriceFeed(address token) external view returns (address) {
+        return s_priceFeeds[token];
+    }
+
+    function getHealthFactor(address user) external view returns (uint256) {
+        return _healthFactor(user);
+    }
+
+    function getMinimumHealthFactor() external pure returns (uint256) {
+        return MIN_HEALTH_FACTOR;
     }
 }

@@ -7,6 +7,7 @@ import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {DSCEngine} from "../../src/DSCEngine.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {OracleLib} from "../../src/library/OracleLib.sol";
 
 contract DSCEngineTest is Test {
     DeployDSC deployer;
@@ -81,13 +82,43 @@ contract DSCEngineTest is Test {
         uint256 actualWeth = engine.getTokenAmountFromUsdValue(weth, usdAmount);
         assertEq(expectedWeth, actualWeth);
     }
-    ////////// deposit collateral tests //////////
+    ////////// Zero Case Tests //////////
 
     function testRevertIfCollateralIsZero() public {
         vm.startPrank(USER);
         ERC20Mock(weth).approve(address(engine), AMOUNT_COLLATERAL);
         vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
         engine.depositCollateral(weth, 0);
+        vm.stopPrank();
+    }
+
+    function testRevertIfMintAmountIsZero() public depositCollateral {
+        vm.startPrank(USER);
+        vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
+        engine.mintDSC(0);
+        vm.stopPrank();
+    }
+
+    function testRevertIfBurnAmountIsZero() public depositCollateral {
+        vm.startPrank(USER);
+        engine.mintDSC(AMOUNT_TO_MINT);
+        dsc.approve(address(engine), AMOUNT_TO_BURN);
+        vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
+        engine.burnDSC(0);
+        vm.stopPrank();
+    }
+
+    function testRevertIfRedeemAmountIsZero() public depositCollateral {
+        vm.startPrank(USER);
+        vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
+        engine.redeemCollateral(weth, 0);
+        vm.stopPrank();
+    }
+
+    function testRevertIfLiquidateAmountIsZero() public DepositAndMintLiquidator {
+        vm.startPrank(USER);
+        vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
+        engine.liquidate(weth, USER, 0);
         vm.stopPrank();
     }
 
@@ -261,5 +292,19 @@ contract DSCEngineTest is Test {
 
         engine.depositCollateral(weth, AMOUNT_COLLATERAL);
         vm.stopPrank();
+    }
+
+    /////////// Oracle Library//////////
+
+    function testGetUsdValueRevertsIfPriceIsStale() public {
+        vm.warp(block.timestamp + 11 hours);
+        vm.expectRevert(OracleLib.OracleLib__PriceIsStale.selector);
+        engine.getUsdValue(weth, 1 ether);
+    }
+
+    function testGetUsdValueDoesNotRevertIfPriceIsFresh() public {
+        vm.warp(block.timestamp + 9 hours);
+        uint256 usdValue = engine.getUsdValue(weth, 1 ether);
+        assertGt(usdValue, 0);
     }
 }
